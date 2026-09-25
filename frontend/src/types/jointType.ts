@@ -11,3 +11,10 @@ export interface JointType {
   glueNeeded: boolean
   schemaRev?: number
 }
+
+export interface FamilyBaseline {
+  family: JointFamily
+  nominalGapMm: number
+  allowanceMm: number
+  schemaRev?: number
+}

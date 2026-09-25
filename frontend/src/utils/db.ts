@@ -1,9 +1,21 @@
 import Dexie, { type Table } from 'dexie'
 import type { Diagram, HitArea } from '../types/diagram'
 import type { Furniture } from '../types/furniture'
-import type { JointType } from '../types/jointType'
+import type { FamilyBaseline, JointType } from '../types/jointType'
 import type { Member } from '../types/member'
 import type { DisassemblyStep } from '../types/step'
+import { DEFAULT_ALLOWANCE_MM, DEFAULT_NOMINAL_GAP_MM, JOINT_FAMILIES } from './measure'
+
+export const SCHEMA_REV = 3
+
+export function makeDefaultFamilyBaselines(): FamilyBaseline[] {
+  return JOINT_FAMILIES.map((family) => ({
+    family,
+    nominalGapMm: DEFAULT_NOMINAL_GAP_MM,
+    allowanceMm: DEFAULT_ALLOWANCE_MM,
+    schemaRev: SCHEMA_REV,
+  }))
+}
 
 export class MortiseDatabase extends Dexie {
   joints!: Table<JointType, string>
@@ -11,6 +23,7 @@ export class MortiseDatabase extends Dexie {
   steps!: Table<DisassemblyStep, string>
   diagrams!: Table<Diagram, string>
   furniture!: Table<Furniture, string>
+  familyBaselines!: Table<FamilyBaseline, string>
 
   constructor() {
     super('gbmortise-db')
@@ -39,6 +52,25 @@ export class MortiseDatabase extends Dexie {
       await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
         furniture.schemaRev = 2
       })
+    })
+    this.version(3).stores({ ...schema, familyBaselines: 'family' }).upgrade(async (transaction) => {
+      await transaction.table<JointType, string>('joints').toCollection().modify((joint) => {
+        joint.schemaRev = SCHEMA_REV
+      })
+      await transaction.table<Member, string>('members').toCollection().modify((member) => {
+        member.schemaRev = SCHEMA_REV
+        member.inputUnit = member.inputUnit ?? 'mm'
+      })
+      await transaction.table<DisassemblyStep, string>('steps').toCollection().modify((step) => {
+        step.schemaRev = SCHEMA_REV
+      })
+      await transaction.table<Diagram, string>('diagrams').toCollection().modify((diagram) => {
+        diagram.schemaRev = SCHEMA_REV
+      })
+      await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
+        furniture.schemaRev = SCHEMA_REV
+      })
+      await transaction.table<FamilyBaseline, string>('familyBaselines').bulkPut(makeDefaultFamilyBaselines())
     })
   }
 }
@@ -175,18 +207,24 @@ const furnitureSeeds: Furniture[] = [
 export const db = new MortiseDatabase()
 
 async function writeSeedData(): Promise<void> {
-  await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture], async () => {
-    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: 2 })))
+  await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture, db.familyBaselines], async () => {
+    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
+    await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, inputUnit: 'mm' as const, schemaRev: SCHEMA_REV })))
+    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
+    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
+    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: SCHEMA_REV })))
+    await db.familyBaselines.bulkPut(makeDefaultFamilyBaselines())
   })
 }
 
 export async function ensureSeedData(): Promise<void> {
-  if (await db.joints.count() > 0) return
-  await writeSeedData()
+  if (await db.joints.count() === 0) {
+    await writeSeedData()
+    return
+  }
+  if (await db.familyBaselines.count() === 0) {
+    await db.familyBaselines.bulkPut(makeDefaultFamilyBaselines())
+  }
 }
 
 db.on('populate', () => writeSeedData())

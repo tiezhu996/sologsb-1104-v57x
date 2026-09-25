@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import type { Furniture, FurnitureName } from '../types/furniture'
-import type { JointType } from '../types/jointType'
-import type { Member } from '../types/member'
-import { db, ensureSeedData } from '../utils/db'
+import type { FamilyBaseline, JointFamily, JointType } from '../types/jointType'
+import type { Member, MeasureUnit } from '../types/member'
+import { db, ensureSeedData, SCHEMA_REV } from '../utils/db'
 
 export type JointDraft = Omit<JointType, 'id' | 'schemaRev'>
 export type FurnitureDraft = Omit<Furniture, 'id' | 'schemaRev'>
@@ -11,6 +11,7 @@ interface JointState {
   joints: JointType[]
   members: Member[]
   furniture: Furniture[]
+  familyBaselines: FamilyBaseline[]
   stepCounts: Record<string, number>
   selectedJointId: string | null
   loading: boolean
@@ -21,6 +22,11 @@ interface JointState {
   updateMemberDimensions: (
     memberId: string,
     dimensions: Pick<Member, 'lengthMm' | 'widthMm' | 'thicknessMm' | 'toleranceMm'>,
+  ) => Promise<void>
+  setMemberUnit: (memberId: string, unit: MeasureUnit) => Promise<void>
+  updateFamilyBaseline: (
+    family: JointFamily,
+    baseline: Pick<FamilyBaseline, 'nominalGapMm' | 'allowanceMm'>,
   ) => Promise<void>
   renameMember: (memberId: string, name: Member['name']) => Promise<void>
 }
@@ -33,6 +39,7 @@ export const useJointStore = create<JointState>((set, get) => ({
   joints: [],
   members: [],
   furniture: [],
+  familyBaselines: [],
   stepCounts: {},
   selectedJointId: null,
   loading: false,
@@ -42,11 +49,12 @@ export const useJointStore = create<JointState>((set, get) => ({
     set({ loading: true })
     try {
       await ensureSeedData()
-      const [joints, members, furniture, steps] = await Promise.all([
+      const [joints, members, furniture, steps, familyBaselines] = await Promise.all([
         db.joints.toArray(),
         db.members.toArray(),
         db.furniture.toArray(),
         db.steps.toArray(),
+        db.familyBaselines.toArray(),
       ])
       const stepCounts = steps.reduce<Record<string, number>>((counts, step) => {
         counts[step.jointTypeId] = (counts[step.jointTypeId] ?? 0) + 1
@@ -57,6 +65,7 @@ export const useJointStore = create<JointState>((set, get) => ({
         joints: joints.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
         members,
         furniture,
+        familyBaselines,
         stepCounts,
         selectedJointId: selectedJointId && joints.some((joint) => joint.id === selectedJointId)
           ? selectedJointId
@@ -68,7 +77,7 @@ export const useJointStore = create<JointState>((set, get) => ({
   },
 
   addJoint: async (draft) => {
-    const joint: JointType = { ...draft, id: createId('joint'), schemaRev: 2 }
+    const joint: JointType = { ...draft, id: createId('joint'), schemaRev: SCHEMA_REV }
     await db.joints.add(joint)
     set((state) => ({
       joints: [...state.joints, joint].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
@@ -79,7 +88,7 @@ export const useJointStore = create<JointState>((set, get) => ({
   },
 
   addFurniture: async (draft) => {
-    const furniture: Furniture = { ...draft, id: createId('furniture'), schemaRev: 2 }
+    const furniture: Furniture = { ...draft, id: createId('furniture'), schemaRev: SCHEMA_REV }
     await db.furniture.add(furniture)
     set((state) => ({ furniture: [...state.furniture, furniture] }))
     return furniture
@@ -92,6 +101,24 @@ export const useJointStore = create<JointState>((set, get) => ({
     set((state) => ({
       members: state.members.map((member) => (
         member.id === memberId ? { ...member, ...dimensions } : member
+      )),
+    }))
+  },
+
+  setMemberUnit: async (memberId, unit) => {
+    await db.members.update(memberId, { inputUnit: unit })
+    set((state) => ({
+      members: state.members.map((member) => (
+        member.id === memberId ? { ...member, inputUnit: unit } : member
+      )),
+    }))
+  },
+
+  updateFamilyBaseline: async (family, baseline) => {
+    await db.familyBaselines.update(family, baseline)
+    set((state) => ({
+      familyBaselines: state.familyBaselines.map((item) => (
+        item.family === family ? { ...item, ...baseline } : item
       )),
     }))
   },

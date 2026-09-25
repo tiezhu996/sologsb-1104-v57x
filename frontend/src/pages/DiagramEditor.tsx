@@ -15,6 +15,7 @@ export default function DiagramEditor() {
   const members = useJointStore((state) => state.members)
   const loadAll = useJointStore((state) => state.loadAll)
   const renameMember = useJointStore((state) => state.renameMember)
+  const setMemberUnit = useJointStore((state) => state.setMemberUnit)
   const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
   const diagrams = useDiagramStore((state) => state.diagrams)
   const selectedDiagramId = useDiagramStore((state) => state.selectedDiagramId)
@@ -116,6 +117,8 @@ export default function DiagramEditor() {
                         label="长度"
                         valueMm={selectedMember.lengthMm}
                         toleranceMm={selectedMember.toleranceMm}
+                        unit={selectedMember.inputUnit ?? 'mm'}
+                        onUnitChange={(nextUnit) => void setMemberUnit(selectedMember.id, nextUnit)}
                         onChange={(value) => void updateMemberDimensions(selectedMember.id, {
                           lengthMm: value,
                           widthMm: selectedMember.widthMm,
@@ -127,6 +130,8 @@ export default function DiagramEditor() {
                         label="宽度"
                         valueMm={selectedMember.widthMm}
                         toleranceMm={selectedMember.toleranceMm}
+                        unit={selectedMember.inputUnit ?? 'mm'}
+                        onUnitChange={(nextUnit) => void setMemberUnit(selectedMember.id, nextUnit)}
                         onChange={(value) => void updateMemberDimensions(selectedMember.id, {
                           lengthMm: selectedMember.lengthMm,
                           widthMm: value,
@@ -138,6 +143,8 @@ export default function DiagramEditor() {
                         label="厚度"
                         valueMm={selectedMember.thicknessMm}
                         toleranceMm={selectedMember.toleranceMm}
+                        unit={selectedMember.inputUnit ?? 'mm'}
+                        onUnitChange={(nextUnit) => void setMemberUnit(selectedMember.id, nextUnit)}
                         onChange={(value) => void updateMemberDimensions(selectedMember.id, {
                           lengthMm: selectedMember.lengthMm,
                           widthMm: selectedMember.widthMm,
@@ -149,6 +156,8 @@ export default function DiagramEditor() {
                         label="配合公差"
                         valueMm={selectedMember.toleranceMm}
                         toleranceMm={selectedMember.toleranceMm}
+                        unit={selectedMember.inputUnit ?? 'mm'}
+                        onUnitChange={(nextUnit) => void setMemberUnit(selectedMember.id, nextUnit)}
                         onChange={(value) => void updateMemberDimensions(selectedMember.id, {
                           lengthMm: selectedMember.lengthMm,
                           widthMm: selectedMember.widthMm,

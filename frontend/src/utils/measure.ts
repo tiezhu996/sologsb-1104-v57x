@@ -1,4 +1,12 @@
+import type { JointFamily } from '../types/jointType'
+import type { MeasureUnit } from '../types/member'
+
 export const MM_PER_CUN = 100 / 3
+
+export const DEFAULT_NOMINAL_GAP_MM = 0.2
+export const DEFAULT_ALLOWANCE_MM = 0.12
+
+export const JOINT_FAMILIES: JointFamily[] = ['出头', '闷榫', '圆材']
 
 export function cunToMm(value: number): number {
   return value * MM_PER_CUN
@@ -13,7 +21,7 @@ export function roundMeasure(value: number, digits = 2): number {
   return Math.round(value * factor) / factor
 }
 
-export function formatDimension(valueMm: number, unit: 'mm' | '寸' = 'mm', digits = 1): string {
+export function formatDimension(valueMm: number, unit: MeasureUnit = 'mm', digits = 1): string {
   if (!Number.isFinite(valueMm)) return '--'
   const value = unit === 'mm' ? valueMm : mmToCun(valueMm)
   return `${roundMeasure(value, digits)} ${unit}`

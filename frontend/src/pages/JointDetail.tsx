@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BlankPanel } from '../components/common/BlankPanel'
 import { DifficultyTag } from '../components/common/DifficultyTag'
@@ -6,7 +6,13 @@ import { SizeField } from '../components/common/SizeField'
 import { StepRail } from '../components/common/StepRail'
 import { useStepOrder } from '../hooks/useStepOrder'
 import { useJointStore } from '../stores/jointStore'
-import { checkTolerance, formatDimension } from '../utils/measure'
+import {
+  checkTolerance,
+  DEFAULT_ALLOWANCE_MM,
+  DEFAULT_NOMINAL_GAP_MM,
+  formatDimension,
+  roundMeasure,
+} from '../utils/measure'
 import { exportJointData } from '../utils/export'
 
 export default function JointDetail() {
@@ -15,9 +21,12 @@ export default function JointDetail() {
   const joints = useJointStore((state) => state.joints)
   const members = useJointStore((state) => state.members)
   const furniture = useJointStore((state) => state.furniture)
+  const familyBaselines = useJointStore((state) => state.familyBaselines)
   const loading = useJointStore((state) => state.loading)
   const loadAll = useJointStore((state) => state.loadAll)
   const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
+  const setMemberUnit = useJointStore((state) => state.setMemberUnit)
+  const updateFamilyBaseline = useJointStore((state) => state.updateFamilyBaseline)
   const { steps, totalDurationSec, currentStepIndex, move, setCurrentStep } = useStepOrder(id)
 
   useEffect(() => {
@@ -40,6 +49,12 @@ export default function JointDetail() {
 
   if (!joint) {
     return <div className="py-16 text-center text-sm text-stone-500" data-testid="detail-joint">正在读取木作数据…</div>
+  }
+
+  const baseline = familyBaselines.find((item) => item.family === joint.family) ?? {
+    family: joint.family,
+    nominalGapMm: DEFAULT_NOMINAL_GAP_MM,
+    allowanceMm: DEFAULT_ALLOWANCE_MM,
   }
 
   return (
@@ -76,12 +91,37 @@ export default function JointDetail() {
       </section>
 
       <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-wood-900">构件尺寸与公差</h2>
-            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可直接在毫米与寸之间切换录入。</p>
+            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可按毫米或寸录入，单位选择随构件保存。</p>
           </div>
-          <span className="text-xs text-stone-500">基准间隙 0.20 mm，允许偏离 ±0.12 mm</span>
+          <div
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-wood-100 bg-wood-50/60 px-4 py-3 text-xs text-stone-600"
+            data-testid="family-baseline"
+          >
+            <span className="font-medium text-wood-700">{joint.family}家族配合基准</span>
+            <BaselineInput
+              label="名义间隙"
+              value={baseline.nominalGapMm}
+              suffix="mm"
+              onCommit={(value) => void updateFamilyBaseline(joint.family, {
+                nominalGapMm: value,
+                allowanceMm: baseline.allowanceMm,
+              })}
+            />
+            <BaselineInput
+              label="允许偏差"
+              value={baseline.allowanceMm}
+              prefix="±"
+              suffix="mm"
+              onCommit={(value) => void updateFamilyBaseline(joint.family, {
+                nominalGapMm: baseline.nominalGapMm,
+                allowanceMm: value,
+              })}
+            />
+            <span className="text-[11px] text-stone-400">仅影响本家族校验结论，构件登记数字不变</span>
+          </div>
         </div>
         {currentMembers.length === 0 ? (
           <BlankPanel title="尚无构件记录" description="当前类型的构件尺寸仍待补充。" />
@@ -101,7 +141,7 @@ export default function JointDetail() {
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {currentMembers.map((member) => {
-                  const tolerance = checkTolerance(member.toleranceMm, 0.2, 0.12)
+                  const tolerance = checkTolerance(member.toleranceMm, baseline.nominalGapMm, baseline.allowanceMm)
                   return (
                     <tr key={member.id} className="align-top">
                       <td className="px-4 py-4">
@@ -115,6 +155,8 @@ export default function JointDetail() {
                           label={`${member.name}长度`}
                           valueMm={member.lengthMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit ?? 'mm'}
+                          onUnitChange={(nextUnit) => void setMemberUnit(member.id, nextUnit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: value,
                             widthMm: member.widthMm,
@@ -128,6 +170,8 @@ export default function JointDetail() {
                           label={`${member.name}宽度`}
                           valueMm={member.widthMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit ?? 'mm'}
+                          onUnitChange={(nextUnit) => void setMemberUnit(member.id, nextUnit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: member.lengthMm,
                             widthMm: value,
@@ -141,6 +185,8 @@ export default function JointDetail() {
                           label={`${member.name}厚度`}
                           valueMm={member.thicknessMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit ?? 'mm'}
+                          onUnitChange={(nextUnit) => void setMemberUnit(member.id, nextUnit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: member.lengthMm,
                             widthMm: member.widthMm,
@@ -218,5 +264,54 @@ function Stat({ label, value, unit }: { label: string; value: number; unit: stri
       <strong className="block text-xl text-wood-700">{value}</strong>
       <span className="mt-1 block text-[11px] text-stone-500">{label} · {unit}</span>
     </div>
+  )
+}
+
+interface BaselineInputProps {
+  label: string
+  value: number
+  prefix?: string
+  suffix?: string
+  onCommit: (value: number) => void
+}
+
+function BaselineInput({ label, value, prefix, suffix, onCommit }: BaselineInputProps) {
+  const [text, setText] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setText(String(value))
+  }, [value, editing])
+
+  const commit = () => {
+    setEditing(false)
+    const parsed = Number.parseFloat(text)
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      onCommit(roundMeasure(parsed, 2))
+    } else {
+      setText(String(value))
+    }
+  }
+
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span>{label}</span>
+      {prefix ? <span aria-hidden="true">{prefix}</span> : null}
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        className="w-20 rounded-md border border-wood-100 bg-white px-2 py-1 text-xs text-stone-800 outline-none focus:border-wood-500"
+        value={text}
+        aria-label={`${label}（毫米）`}
+        onFocus={() => setEditing(true)}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+      />
+      {suffix ? <span>{suffix}</span> : null}
+    </label>
   )
 }
