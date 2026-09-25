@@ -2,11 +2,13 @@ import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BlankPanel } from '../components/common/BlankPanel'
 import { DifficultyTag } from '../components/common/DifficultyTag'
+import { FamilyStandardEditor } from '../components/common/FamilyStandardEditor'
 import { SizeField } from '../components/common/SizeField'
 import { StepRail } from '../components/common/StepRail'
 import { useStepOrder } from '../hooks/useStepOrder'
 import { useJointStore } from '../stores/jointStore'
 import { checkTolerance, formatDimension } from '../utils/measure'
+import { makeDefaultStandard } from '../types/familyStandard'
 import { exportJointData } from '../utils/export'
 
 export default function JointDetail() {
@@ -15,9 +17,11 @@ export default function JointDetail() {
   const joints = useJointStore((state) => state.joints)
   const members = useJointStore((state) => state.members)
   const furniture = useJointStore((state) => state.furniture)
+  const familyStandards = useJointStore((state) => state.familyStandards)
   const loading = useJointStore((state) => state.loading)
   const loadAll = useJointStore((state) => state.loadAll)
   const updateMemberDimensions = useJointStore((state) => state.updateMemberDimensions)
+  const setMemberUnit = useJointStore((state) => state.setMemberUnit)
   const { steps, totalDurationSec, currentStepIndex, move, setCurrentStep } = useStepOrder(id)
 
   useEffect(() => {
@@ -25,6 +29,8 @@ export default function JointDetail() {
   }, [loadAll])
 
   const joint = joints.find((item) => item.id === id)
+  const familyStandard = familyStandards.find((item) => item.family === joint?.family)
+    ?? (joint ? makeDefaultStandard(joint.family) : makeDefaultStandard('出头'))
   const currentMembers = members
     .filter((member) => member.jointTypeId === id)
     .sort((a, b) => a.lengthMm - b.lengthMm)
@@ -79,9 +85,9 @@ export default function JointDetail() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-wood-900">构件尺寸与公差</h2>
-            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可直接在毫米与寸之间切换录入。</p>
+            <p className="mt-1 text-sm text-stone-500">按短料优先排列，可直接在毫米与寸之间切换录入，单位选择随构件保存。</p>
           </div>
-          <span className="text-xs text-stone-500">基准间隙 0.20 mm，允许偏离 ±0.12 mm</span>
+          <FamilyStandardEditor family={joint.family} />
         </div>
         {currentMembers.length === 0 ? (
           <BlankPanel title="尚无构件记录" description="当前类型的构件尺寸仍待补充。" />
@@ -101,7 +107,11 @@ export default function JointDetail() {
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {currentMembers.map((member) => {
-                  const tolerance = checkTolerance(member.toleranceMm, 0.2, 0.12)
+                  const tolerance = checkTolerance(
+                    member.toleranceMm,
+                    familyStandard.nominalGapMm,
+                    familyStandard.allowableDeviationMm,
+                  )
                   return (
                     <tr key={member.id} className="align-top">
                       <td className="px-4 py-4">
@@ -115,6 +125,8 @@ export default function JointDetail() {
                           label={`${member.name}长度`}
                           valueMm={member.lengthMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit}
+                          onUnitChange={(unit) => void setMemberUnit(member.id, unit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: value,
                             widthMm: member.widthMm,
@@ -128,6 +140,8 @@ export default function JointDetail() {
                           label={`${member.name}宽度`}
                           valueMm={member.widthMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit}
+                          onUnitChange={(unit) => void setMemberUnit(member.id, unit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: member.lengthMm,
                             widthMm: value,
@@ -141,6 +155,8 @@ export default function JointDetail() {
                           label={`${member.name}厚度`}
                           valueMm={member.thicknessMm}
                           toleranceMm={member.toleranceMm}
+                          unit={member.inputUnit}
+                          onUnitChange={(unit) => void setMemberUnit(member.id, unit)}
                           onChange={(value) => void updateMemberDimensions(member.id, {
                             lengthMm: member.lengthMm,
                             widthMm: member.widthMm,
@@ -158,6 +174,9 @@ export default function JointDetail() {
                           {tolerance.withinTolerance ? '配合合适' : '需要修配'}
                         </span>
                         <p className="mt-2 text-xs leading-5 text-stone-500">{tolerance.message}</p>
+                        <p className="mt-1 text-[11px] text-stone-400">
+                          {joint.family}基准 {formatDimension(familyStandard.nominalGapMm, 'mm', 2)} / ±{formatDimension(familyStandard.allowableDeviationMm, 'mm', 2)}
+                        </p>
                         <p className="mt-1 text-[11px] text-stone-400">登记公差 {formatDimension(member.toleranceMm, 'mm', 2)}</p>
                       </td>
                     </tr>

@@ -1,5 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { Diagram, HitArea } from '../types/diagram'
+import type { FamilyStandard } from '../types/familyStandard'
+import { makeDefaultStandard } from '../types/familyStandard'
 import type { Furniture } from '../types/furniture'
 import type { JointType } from '../types/jointType'
 import type { Member } from '../types/member'
@@ -11,6 +13,7 @@ export class MortiseDatabase extends Dexie {
   steps!: Table<DisassemblyStep, string>
   diagrams!: Table<Diagram, string>
   furniture!: Table<Furniture, string>
+  familyStandards!: Table<FamilyStandard, string>
 
   constructor() {
     super('gbmortise-db')
@@ -38,6 +41,42 @@ export class MortiseDatabase extends Dexie {
       })
       await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
         furniture.schemaRev = 2
+      })
+    })
+    this.version(3).stores({
+      ...schema,
+      familyStandards: 'family',
+    }).upgrade(async (transaction) => {
+      // 老构件补记默认录入单位（毫米），尺寸与公差数字保持原样
+      await transaction.table<Member, string>('members').toCollection().modify((member) => {
+        if (member.inputUnit !== 'mm' && member.inputUnit !== '寸') {
+          member.inputUnit = 'mm'
+        }
+        member.schemaRev = 3
+      })
+
+      // 每个已出现的家族各补一条基准记录，沿用原全局基准 0.20 mm / ±0.12 mm
+      const joints = await transaction.table<JointType, string>('joints').toArray()
+      const standardsTable = transaction.table<FamilyStandard, string>('familyStandards')
+      const existingFamilies = await standardsTable.toCollection().primaryKeys()
+      const families = new Set(joints.map((joint) => joint.family))
+      for (const family of families) {
+        if (!existingFamilies.includes(family)) {
+          await standardsTable.add(makeDefaultStandard(family))
+        }
+      }
+
+      await transaction.table<JointType, string>('joints').toCollection().modify((joint) => {
+        joint.schemaRev = 3
+      })
+      await transaction.table<DisassemblyStep, string>('steps').toCollection().modify((step) => {
+        step.schemaRev = 3
+      })
+      await transaction.table<Diagram, string>('diagrams').toCollection().modify((diagram) => {
+        diagram.schemaRev = 3
+      })
+      await transaction.table<Furniture, string>('furniture').toCollection().modify((furniture) => {
+        furniture.schemaRev = 3
       })
     })
   }
@@ -72,18 +111,18 @@ function makeSeedSvg(title: string, memberIds: [string, string, string], labels:
 }
 
 const memberSeeds: Member[] = [
-  { id: 'member-dt-tenon', jointTypeId: 'joint-dovetail', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 128, widthMm: 54, thicknessMm: 28, toleranceMm: 0.15, note: '燕尾斜面须顺纹修切，肩部保留铅笔线。' },
-  { id: 'member-dt-socket', jointTypeId: 'joint-dovetail', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 126, widthMm: 52, thicknessMm: 30, toleranceMm: 0.18, note: '眼口略收，试装以木槌轻推为准。' },
-  { id: 'member-dt-frame', jointTypeId: 'joint-dovetail', name: '大边', part: '受榫件', grainDir: '顺纹', lengthMm: 680, widthMm: 72, thicknessMm: 34, toleranceMm: 0.2, note: '长料纹理连续，端面垂直于基准边。' },
-  { id: 'member-mt-tenon', jointTypeId: 'joint-mitre', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 92, widthMm: 42, thicknessMm: 26, toleranceMm: 0.12, note: '肩部做45度斜肩，避免端面崩口。' },
-  { id: 'member-mt-socket', jointTypeId: 'joint-mitre', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 88, widthMm: 40, thicknessMm: 28, toleranceMm: 0.15, note: '暗眼深度留2毫米余量，便于胶线排出。' },
-  { id: 'member-mt-rail', jointTypeId: 'joint-mitre', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 420, widthMm: 58, thicknessMm: 31, toleranceMm: 0.16, note: '格肩先试合外肩，再修内肩。' },
-  { id: 'member-zj-frame', jointTypeId: 'joint-corner', name: '大边', part: '出榫件', grainDir: '顺纹', lengthMm: 760, widthMm: 78, thicknessMm: 36, toleranceMm: 0.2, note: '三向交汇处先留线，最后统一校肩。' },
-  { id: 'member-zj-rail', jointTypeId: 'joint-corner', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 430, widthMm: 62, thicknessMm: 34, toleranceMm: 0.18, note: '接口两侧受力不同，不可互换方向。' },
-  { id: 'member-zj-socket', jointTypeId: 'joint-corner', name: '榫眼', part: '受榫件', grainDir: '顺纹', lengthMm: 154, widthMm: 62, thicknessMm: 38, toleranceMm: 0.16, note: '眼内清角，以三角凿逐层修整。' },
-  { id: 'member-bs-tenon', jointTypeId: 'joint-shoulder', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 108, widthMm: 46, thicknessMm: 29, toleranceMm: 0.13, note: '抱肩弧面顺腿足外圆加工。' },
-  { id: 'member-bs-socket', jointTypeId: 'joint-shoulder', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 104, widthMm: 44, thicknessMm: 31, toleranceMm: 0.15, note: '圆材开眼不可过深，保留腿足承载截面。' },
-  { id: 'member-bs-rail', jointTypeId: 'joint-shoulder', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 470, widthMm: 50, thicknessMm: 30, toleranceMm: 0.17, note: '肩线随圆材弧度修配，避免硬压。' },
+  { id: 'member-dt-tenon', jointTypeId: 'joint-dovetail', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 128, widthMm: 54, thicknessMm: 28, toleranceMm: 0.15, inputUnit: 'mm', note: '燕尾斜面须顺纹修切，肩部保留铅笔线。' },
+  { id: 'member-dt-socket', jointTypeId: 'joint-dovetail', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 126, widthMm: 52, thicknessMm: 30, toleranceMm: 0.18, inputUnit: 'mm', note: '眼口略收，试装以木槌轻推为准。' },
+  { id: 'member-dt-frame', jointTypeId: 'joint-dovetail', name: '大边', part: '受榫件', grainDir: '顺纹', lengthMm: 680, widthMm: 72, thicknessMm: 34, toleranceMm: 0.2, inputUnit: 'mm', note: '长料纹理连续，端面垂直于基准边。' },
+  { id: 'member-mt-tenon', jointTypeId: 'joint-mitre', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 92, widthMm: 42, thicknessMm: 26, toleranceMm: 0.12, inputUnit: 'mm', note: '肩部做45度斜肩，避免端面崩口。' },
+  { id: 'member-mt-socket', jointTypeId: 'joint-mitre', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 88, widthMm: 40, thicknessMm: 28, toleranceMm: 0.15, inputUnit: 'mm', note: '暗眼深度留2毫米余量，便于胶线排出。' },
+  { id: 'member-mt-rail', jointTypeId: 'joint-mitre', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 420, widthMm: 58, thicknessMm: 31, toleranceMm: 0.16, inputUnit: 'mm', note: '格肩先试合外肩，再修内肩。' },
+  { id: 'member-zj-frame', jointTypeId: 'joint-corner', name: '大边', part: '出榫件', grainDir: '顺纹', lengthMm: 760, widthMm: 78, thicknessMm: 36, toleranceMm: 0.2, inputUnit: 'mm', note: '三向交汇处先留线，最后统一校肩。' },
+  { id: 'member-zj-rail', jointTypeId: 'joint-corner', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 430, widthMm: 62, thicknessMm: 34, toleranceMm: 0.18, inputUnit: 'mm', note: '接口两侧受力不同，不可互换方向。' },
+  { id: 'member-zj-socket', jointTypeId: 'joint-corner', name: '榫眼', part: '受榫件', grainDir: '顺纹', lengthMm: 154, widthMm: 62, thicknessMm: 38, toleranceMm: 0.16, inputUnit: 'mm', note: '眼内清角，以三角凿逐层修整。' },
+  { id: 'member-bs-tenon', jointTypeId: 'joint-shoulder', name: '榫头', part: '出榫件', grainDir: '顺纹', lengthMm: 108, widthMm: 46, thicknessMm: 29, toleranceMm: 0.13, inputUnit: 'mm', note: '抱肩弧面顺腿足外圆加工。' },
+  { id: 'member-bs-socket', jointTypeId: 'joint-shoulder', name: '榫眼', part: '受榫件', grainDir: '横纹', lengthMm: 104, widthMm: 44, thicknessMm: 31, toleranceMm: 0.15, inputUnit: 'mm', note: '圆材开眼不可过深，保留腿足承载截面。' },
+  { id: 'member-bs-rail', jointTypeId: 'joint-shoulder', name: '抹头', part: '出榫件', grainDir: '横纹', lengthMm: 470, widthMm: 50, thicknessMm: 30, toleranceMm: 0.17, inputUnit: 'mm', note: '肩线随圆材弧度修配，避免硬压。' },
 ]
 
 const stepSeeds: DisassemblyStep[] = [
@@ -163,6 +202,12 @@ const jointSeeds: JointType[] = [
   { id: 'joint-shoulder', name: '抱肩榫', family: '圆材', difficulty: '高难', strengthNote: '牙板抱合腿足，弧面分散压力并限制侧向晃动。', glueNeeded: false },
 ]
 
+const familyStandardSeeds: FamilyStandard[] = [
+  makeDefaultStandard('出头'),
+  makeDefaultStandard('闷榫'),
+  makeDefaultStandard('圆材'),
+]
+
 const furnitureSeeds: Furniture[] = [
   { id: 'furniture-quanyi', jointTypeId: 'joint-shoulder', name: '圈椅', era: '明式', position: '扶手与联帮棍交接处', loadNote: '抱肩弧面分担手臂压力，使圆材连接保持顺纹完整。' },
   { id: 'furniture-tiaoan', jointTypeId: 'joint-dovetail', name: '条案', era: '明式', position: '翘头与大边端部', loadNote: '燕尾齿肩抵抗案面横向收缩，减少端面开缝。' },
@@ -175,12 +220,13 @@ const furnitureSeeds: Furniture[] = [
 export const db = new MortiseDatabase()
 
 async function writeSeedData(): Promise<void> {
-  await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture], async () => {
-    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: 2 })))
-    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: 2 })))
+  await db.transaction('rw', [db.joints, db.members, db.steps, db.diagrams, db.furniture, db.familyStandards], async () => {
+    await db.joints.bulkAdd(jointSeeds.map((item) => ({ ...item, schemaRev: 3 })))
+    await db.members.bulkAdd(memberSeeds.map((item) => ({ ...item, schemaRev: 3 })))
+    await db.steps.bulkAdd(stepSeeds.map((item) => ({ ...item, schemaRev: 3 })))
+    await db.diagrams.bulkAdd(diagramSeeds.map((item) => ({ ...item, schemaRev: 3 })))
+    await db.furniture.bulkAdd(furnitureSeeds.map((item) => ({ ...item, schemaRev: 3 })))
+    await db.familyStandards.bulkAdd(familyStandardSeeds)
   })
 }
 

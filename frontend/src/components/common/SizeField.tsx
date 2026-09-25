@@ -1,16 +1,25 @@
-import { useState } from 'react'
 import { cunToMm, formatDimension, mmToCun, roundMeasure } from '../../utils/measure'
+import type { DimensionUnit } from '../../types/member'
 
 interface SizeFieldProps {
   label: string
   valueMm: number
   toleranceMm: number
+  unit?: DimensionUnit
+  onUnitChange?: (unit: DimensionUnit) => void
   onChange?: (valueMm: number) => void
   readOnly?: boolean
 }
 
-export function SizeField({ label, valueMm, toleranceMm, onChange, readOnly = false }: SizeFieldProps) {
-  const [unit, setUnit] = useState<'mm' | '寸'>('mm')
+export function SizeField({
+  label,
+  valueMm,
+  toleranceMm,
+  unit = 'mm',
+  onUnitChange,
+  onChange,
+  readOnly = false,
+}: SizeFieldProps) {
   const displayedValue = roundMeasure(unit === 'mm' ? valueMm : mmToCun(valueMm), 2)
 
   const updateValue = (rawValue: string) => {
@@ -28,7 +37,7 @@ export function SizeField({ label, valueMm, toleranceMm, onChange, readOnly = fa
           aria-label={`${label}单位`}
           className="rounded-md border border-wood-100 bg-white px-1.5 py-0.5 text-xs text-wood-700 outline-none focus:border-wood-500"
           value={unit}
-          onChange={(event) => setUnit(event.target.value === '寸' ? '寸' : 'mm')}
+          onChange={(event) => onUnitChange?.(event.target.value === '寸' ? '寸' : 'mm')}
         >
           <option value="mm">mm</option>
           <option value="寸">寸</option>
